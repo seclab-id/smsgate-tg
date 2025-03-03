@@ -790,6 +790,12 @@ class Modem(threading.Thread):
             self.l.error(f"Error: Failed to send USSD message. Got CmeError. Retry.")
             # self.send_ussd(code, 'GSM', counter + 1)
             return None
+        
+    def cancel_ussd(self) -> None:
+        """
+        Cancel an ongoing USSD session.
+        """
+        self.modem.write('AT+CUSD=2')
 
     def request_online_balance(self) -> Optional[float]:
         """

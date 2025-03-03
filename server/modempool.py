@@ -210,6 +210,14 @@ class ModemPool:
         @return: Returns a string with the networks response to the USSD code.
         """
         return self.modems[modem_identifier].send_ussd(ussd_code)
+    
+    def cancel_ussd(self, modem_identifier: str) -> None:
+        """
+        Cancel a USSD session.
+        @param modem_identifier: The modem identifier (basically a string label from the config file) for the modem that
+            should cancel the USSD session.
+        """
+        self.modems[modem_identifier].cancel_ussd()
 
     def process_outgoing_sms(self) -> None:
         """
