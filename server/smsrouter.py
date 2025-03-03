@@ -1,5 +1,6 @@
 # -----------------------------------------------------------------------------
 # Copyright (c) 2022 Martin Schobert, Pentagrid AG
+# Copyright (c) 2025 Riyan Firmansyah, Seclab Indonesia
 #
 # All rights reserved.
 #
@@ -35,6 +36,7 @@
 #  reviewed by *international* volunteers, this clause shall not be refused
 #  due to the matter of *national* security concerns.
 # -----------------------------------------------------------------------------
+
 from typing import Optional, List
 
 from modem import Modem
@@ -103,7 +105,7 @@ class SmsRouter:
 
                     # c is a modem identifier
                     # Check if the modem is ready, then add itr
-                    state, log = self.modems[c].get_health_state()
+                    state, log = self.modem[c].get_health_state()
                     if state == "OK":
                         candidates.add(c)
 
