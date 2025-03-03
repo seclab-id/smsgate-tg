@@ -1,5 +1,6 @@
 # -----------------------------------------------------------------------------
 # Copyright (c) 2022 Martin Schobert, Pentagrid AG
+# Copyright (c) 2025 Riyan Firmansyah, Seclab Indonesia
 #
 # All rights reserved.
 #
@@ -140,11 +141,11 @@ class SMS:
 
         if content:
             text += (
-                f"Text              :\n\n"
-                + "---------------------------------------------------------\n"
+                f"Text:\n"
+                + "-----------\n"
                 + self.text
                 + "\n"
-                + "---------------------------------------------------------\n"
+                + "-----------\n"
             )
 
         return text
