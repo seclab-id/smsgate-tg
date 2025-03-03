@@ -2,6 +2,7 @@
 #
 # -----------------------------------------------------------------------------
 # Copyright (c) 2022 Martin Schobert, Pentagrid AG
+# Copyright (c) 2025 Riyan Firmansyah, Seclab Indonesia
 #
 # All rights reserved.
 #
@@ -53,7 +54,7 @@ import modem
 import modemconfig
 import modempool
 import rpcserver
-import smtp
+import tg
 
 
 class SmsGate:
@@ -68,13 +69,13 @@ class SmsGate:
         """
 
         self.config = config
-        self.smtp_delivery_queue = queue.Queue()
+        self.telegram_delivery_queue = queue.Queue()
         self.event_available = threading.Event()
 
         self.l = logging.getLogger("SmsGate")
 
         # initialize sub-modules
-        self._init_smtp_delivery()
+        self._init_telegram_delivery()
         self._init_pool()
         self._init_rpcserver()
 
@@ -108,75 +109,64 @@ class SmsGate:
 
         self.server_thread = threading.Thread(
             target=rpcserver.set_up_server,
-            args=(self.config, self.pool, self.smtp_delivery),
+            args=(self.config, self.pool, self.telegram_delivery),
         )
         self.server_thread.start()
 
-    def _init_smtp_delivery(self) -> None:
+    def _init_telegram_delivery(self) -> None:
         """
-        Initializes the SMTP module
+        Initializes the Telegram module
         """
-        if not self.config.getboolean("mail", "enabled", fallback=True):
+        if not self.config.getboolean("telegram", "enabled", fallback=True):
             return
 
-        self.smtp_delivery = smtp.SMTPDelivery(
-            self.config.get("mail", "server"),
-            self.config.getint("mail", "port", fallback=465),
-            self.config.get("mail", "user"),
-            self.config.get("mail", "password"),
-            self.config.getint("mail", "health_check_interval", fallback=600),
+        self.telegram_delivery = tg.TelegramDelivery(
+            self.config.get("telegram", "bot_token"),
+            self.config.getint("telegram", "health_check_interval", fallback=600),
         )
 
-        self.smtp_delivery_thread = threading.Thread(target=self._do_smtp_delivery)
-        self.smtp_delivery_thread.start()
+        self.telegram_delivery_thread = threading.Thread(target=self._do_telegram_delivery)
+        self.telegram_delivery_thread.start()
 
-    def _do_smtp_delivery(self):
+    def _do_telegram_delivery(self):
         """
-        Internal method that checks the delivery queue for outgoing SMS that should be sent via SMTP.
+        Internal method that checks the delivery queue for outgoing SMS that should be sent via Telegram.
         """
 
         while True:
             try:
-                self.l.debug("Check delivery queue if E-mail should be sent. There are about %d SMS in the SMTP delivery queue." % self.smtp_delivery_queue.qsize())
-                _sms = self.smtp_delivery_queue.get(timeout=10)
-                self.l.info(f"[{_sms.get_id()}] Event in SMS-to-Mail delivery queue.")
+                self.l.debug("Check delivery queue if Telegram message should be sent. There are about %d SMS in the Telegram delivery queue." % self.telegram_delivery_queue.qsize())
+                _sms = self.telegram_delivery_queue.get(timeout=10)
+                self.l.info(f"[{_sms.get_id()}] Event in SMS-to-Telegram delivery queue.")
                 if _sms:
-                    self.l.info(f"[{_sms.get_id()}] Try to deliver SMS via E-mail.")
-
-                    # Check if the modem config has a specific recipient
-                    recipient = _sms.get_receiving_modem().get_modem_config().email_address
-                    if recipient is None:
-                        self.l.debug("Failed to look up recipient's e-mail address in modem config.")
-                        # Otherwise read recipient from main configuration
-                        recipient = self.config.get("mail", "recipient")
-
-                    self.l.debug(f"Will send e-mail to {recipient}.")
-
-                    if self.smtp_delivery.send_mail(recipient, _sms):
-                        self.l.info(f"[{_sms.get_id()}] E-mail was accepted by SMTP server.")
+                    self.l.info(f"[{_sms.get_id()}] Try to deliver SMS via Telegram.")
+                    if self.telegram_delivery.send_message(
+                            self.config.get("telegram", "chat_id"), self.config.get("telegram", "message_thread_id"), _sms
+                    ):
+                        self.l.info(f"[{_sms.get_id()}] Telegram message was accepted by Telegram server.")
                     else:
                         self.l.info(f"[{_sms.get_id()}] There was an error delivering the SMS. Put SMS back into "
                                     "queue and wait.")
-                        self.smtp_delivery_queue.put(_sms)
+                        self.telegram_delivery_queue.put(_sms)
 
-                        # Update health data: The loop "prefers" delivering mails and deferrs the
+                        # Update health data: The loop "prefers" delivering messages and deferrs the
                         # health check until there is nothing to do. This is okay, because when
-                        # mails are delivered, everything seems to be okay. When there is an
+                        # messages are delivered, everything seems to be okay. When there is an
                         # issue and we have to wait anyway, we can perform a health check to let
                         # the monitoring sooner or later know.
-                        self.smtp_delivery.do_health_check()
+                        self.telegram_delivery.do_health_check()
                         time.sleep(30)
 
             except queue.Empty:
                 self.l.debug(
-                    "_do_smtp_delivery(): No SMS in queue. Checking if health check should be run."
+                    "_do_telegram_delivery(): No SMS in queue. Checking if health check should be run."
                 )
-                self.smtp_delivery.do_health_check()
+                self.telegram_delivery.do_health_check()
             except Exception as e:
                 self.l.warning("Got exception.")
                 print(e)
             except:
-                self.l.warning("_do_smtp_delivery(): Unknown exception.")
+                self.l.warning("_do_telegram_delivery(): Unknown exception.")
                 traceback.print_exc()
 
     def _init_pool(self) -> bool:
@@ -265,12 +255,12 @@ class SmsGate:
                 if sms:
                     self.l.info(f"[{sms.get_id()}] Got incoming SMS")
 
-                    assert self.smtp_delivery_thread is not None
-                    assert self.smtp_delivery_thread.is_alive()
+                    assert self.telegram_delivery_thread is not None
+                    assert self.telegram_delivery_thread.is_alive()
 
-                    if self.config.getboolean("mail", "enabled", fallback=True):
-                        self.l.debug(f"[{sms.get_id()}] Put SMS into outgoing queue.")
-                        self.smtp_delivery_queue.put(sms)
+                    if self.config.getboolean("telegram", "enabled", fallback=True):
+                        self.l.debug(f"[{sms.get_id()}] Put SMS into Telegram queue.")
+                        self.telegram_delivery_queue.put(sms)
 
                 else:
                     self.l.info("No incoming SMS")

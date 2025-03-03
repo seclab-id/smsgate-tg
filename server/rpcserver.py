@@ -1,5 +1,6 @@
 # -----------------------------------------------------------------------------
-# Copyright (c) 2022-2025 Martin Schobert, Pentagrid AG
+# Copyright (c) 2022 Martin Schobert, Pentagrid AG
+# Copyright (c) 2025 Riyan Firmansyah, Seclab Indonesia
 #
 # All rights reserved.
 #
@@ -35,6 +36,7 @@
 #  reviewed by *international* volunteers, this clause shall not be refused
 #  due to the matter of *national* security concerns.
 # -----------------------------------------------------------------------------
+
 from typing import Optional, Union, List, Tuple, Dict
 
 from twisted.web import xmlrpc, server
@@ -45,7 +47,7 @@ import helper
 import sms
 import logging
 import configparser
-import smtp
+import tg
 import modempool
 
 # Our global variable for OpenSSL Cipher settings. It is read from the config
@@ -60,7 +62,7 @@ class RPCServer(xmlrpc.XMLRPC):
             self,
             config: configparser.ConfigParser,
             _modempool: modempool.ModemPool,
-            smtp_delivery: smtp.SMTPDelivery,
+            telegram_delivery: tg.TelegramDelivery,
     ) -> None:
         """
         Create a new XMLRPC server interface.
@@ -69,7 +71,7 @@ class RPCServer(xmlrpc.XMLRPC):
         sub-components such as the SMTPDelivery.
         @param config: A configuration object of type ConfigParser.
         @param _modempool: A ModemPool object to interact with.
-        @param smtp_delivery: The SMTPDelivery object.
+        @param telegram_delivery: The TelegramDelivery object.
         """
 
         self.rlevel = "OK"
@@ -79,7 +81,7 @@ class RPCServer(xmlrpc.XMLRPC):
 
         self.config = config
         self.pool = _modempool
-        self.smtp_delivery = smtp_delivery
+        self.telegram_delivery = telegram_delivery
         xmlrpc.XMLRPC.__init__(self)
 
         # read API token from configuration
@@ -227,7 +229,7 @@ class RPCServer(xmlrpc.XMLRPC):
             raise xmlrpc.Fault(401, "Invalid API token.")
 
         plevel, plogs = self.pool.get_health_state()  # polls the cached state
-        slevel, slogs = self.smtp_delivery.get_health_state()
+        slevel, slogs = self.telegram_delivery.get_health_state()
 
         if slogs:
             slogs = slevel + ": " + slogs
@@ -268,6 +270,10 @@ class RPCServer(xmlrpc.XMLRPC):
         self.l.info(f"Sending USSD code {ussd_code} for {sender}.")
         modem_identifiers = self.pool.get_identifier_for_phone_number(sender)
         if modem_identifiers:
+            if ussd_code == 'cancel':
+                self.l.info(f"Canceling USSD session for {sender}.")
+                self.pool.cancel_ussd(modem_identifiers[0])
+                return "OK", "USSD session canceled."
             ussd_response = self.pool.send_ussd(modem_identifiers[0], ussd_code)
             if ussd_response:
                 self.l.info(f"USSD code sent. Response is: {ussd_response}")
